@@ -50,7 +50,7 @@ def convert_to_tensors(batch):
     }
 
 tokenized_dataset = tokenized_dataset.map(convert_to_tensors, batched=True)
-dataloader = DataLoader(tokenized_dataset, batch_size=8, shuffle=True)
+dataloader = DataLoader(tokenized_dataset, batch_size=4, shuffle=True)  # Reduzindo o batch_size para 4
 
 # 4. Instanciar o modelo e otimizador
 print("Configurando o modelo e o treinamento...")
@@ -81,15 +81,16 @@ for epoch in range(num_epochs):
         # Imprimir o Loss para cada batch
         if step % 10 == 0:  # Imprimir a cada 10 passos para reduzir a quantidade de prints
             print(f"Epoch {epoch + 1}/{num_epochs}, Batch {step}/{len(dataloader)} - Loss: {loss.item():.4f}")
+    
+    # Salvar o modelo após cada época
+    torch.save(model.state_dict(), f"model_epoch_{epoch+1}.pth")
+    
+    # Gerar texto após cada época para monitorar o progresso
+    if (epoch + 1) % 1 == 0:  # Teste a cada época
+        print(f"Testando geração de texto após a Epoch {epoch + 1}:")
+        generator = pipeline("text-generation", model=model.model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
+        output = generator("Era uma vez em um mundo distante,", max_length=50, num_return_sequences=1)
+        print("Texto gerado:")
+        print(output)
 
 print("Treinamento concluído!")
-
-
-# 6. Gerar texto com o modelo treinado
-print("Testando geração de texto...")
-generator = pipeline("text-generation", model=model.model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
-
-# Geração de texto
-output = generator("Era uma vez em um mundo distante,", max_length=50, num_return_sequences=1)
-print("Texto gerado:")
-print(output)
