@@ -44,13 +44,19 @@ tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=
 
 # Converter os dados para tensores
 def convert_to_tensors(batch):
-    return {
-        "input_ids": torch.tensor(batch["input_ids"]),
-        "attention_mask": torch.tensor(batch["attention_mask"])
-    }
+    batch["input_ids"] = [torch.tensor(ids, dtype=torch.long) for ids in batch["input_ids"]]
+    batch["attention_mask"] = [torch.tensor(mask, dtype=torch.long) for mask in batch["attention_mask"]]
+    return batch
 
 tokenized_dataset = tokenized_dataset.map(convert_to_tensors, batched=True)
-dataloader = DataLoader(tokenized_dataset, batch_size=4, shuffle=True)  # Reduzindo o batch_size para 4
+
+# Criar uma função de colagem para o DataLoader
+def collate_fn(batch):
+    input_ids = torch.stack([torch.tensor(item["input_ids"]) for item in batch])
+    attention_mask = torch.stack([torch.tensor(item["attention_mask"]) for item in batch])
+    return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+dataloader = DataLoader(tokenized_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn)
 
 # 4. Instanciar o modelo e otimizador
 print("Configurando o modelo e o treinamento...")
@@ -62,12 +68,13 @@ optimizer = AdamW(model.parameters(), lr=5e-5)
 
 # 5. Treinar o modelo
 print("Iniciando o treinamento...")
-num_epochs = 3
+num_epochs = 5  # Número de épocas
 for epoch in range(num_epochs):
     print(f"Epoch {epoch + 1}/{num_epochs}")
+    model.train()  # Modo de treinamento
     for step, batch in enumerate(dataloader):
-        input_ids = torch.stack(batch["input_ids"]).to(device)
-        attention_mask = torch.stack(batch["attention_mask"]).to(device)
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
 
         # Forward pass
         labels = input_ids.clone()  # Cópia para os labels
@@ -79,18 +86,26 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
 
         # Imprimir o Loss para cada batch
-        if step % 10 == 0:  # Imprimir a cada 10 passos para reduzir a quantidade de prints
+        if step % 10 == 0:  # Imprimir a cada 10 passos
             print(f"Epoch {epoch + 1}/{num_epochs}, Batch {step}/{len(dataloader)} - Loss: {loss.item():.4f}")
-    
-    # Salvar o modelo após cada época
-    torch.save(model.state_dict(), f"model_epoch_{epoch+1}.pth")
-    
-    # Gerar texto após cada época para monitorar o progresso
-    if (epoch + 1) % 1 == 0:  # Teste a cada época
-        print(f"Testando geração de texto após a Epoch {epoch + 1}:")
-        generator = pipeline("text-generation", model=model.model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
-        output = generator("Era uma vez em um mundo distante,", max_length=50, num_return_sequences=1)
-        print("Texto gerado:")
-        print(output)
 
 print("Treinamento concluído!")
+
+# 6. Gerar texto com o modelo treinado
+print("Testando geração de texto...")
+generator = pipeline("text-generation", model=model.model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
+
+# Geração de texto
+output = generator(
+    "Era uma vez em um mundo distante,", 
+    max_length=100,  # Permitir textos mais longos
+    num_return_sequences=3,  # Gerar múltiplas saídas
+    temperature=0.8,  # Controlar aleatoriedade
+    top_k=50,  # Limitar aos 50 tokens mais prováveis
+    top_p=0.9,  # Usar amostragem de núcleo
+    truncation=True  # Ativar truncamento explicitamente
+)
+
+print("Texto(s) gerado(s):")
+for idx, text in enumerate(output):
+    print(f"Saída {idx + 1}: {text['generated_text']}")
